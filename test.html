@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <title>MMEarth-Bench Test Map</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map">
+        <div id="loading">Loading tiles...</div>
+    </div>
+
+    <script>
+        // Initialize map
+        let map = L.map('map', {
+            fadeAnimation: false,
+            zoomAnimation: true,
+            markerZoomAnimation: false,
+            minZoom: 1,
+            maxBounds: L.latLngBounds([[-90, -180], [90, 180]]),
+            maxBoundsViscosity: 1.0,
+            worldCopyJump: false
+        }).setView([0, 0], 2);
+
+        // Add background tile layer
+        let Stadia_OSMBright = L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.{ext}', {
+            minZoom: 1,
+            maxZoom: 20,
+            attribution: '&copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            ext: 'png',
+        });
+        Stadia_OSMBright.addTo(map);
+
+        // Prevent dragging past map edges
+        map.on('drag', function() {
+            const maxBounds = map.options.maxBounds;
+            if (maxBounds) {
+                map.panInsideBounds(maxBounds, { animate: false });
+            }
+        });
+
+        // Load and display tiles
+        async function loadTiles() {
+            try {
+                // Use S3 bucket directly (works without CORS issues)
+                // If you need to use the ERDA URL, you'll need to set up a local proxy or server
+                const url = 'https://mmearth-bench-bucket-a1e1664c.s3.eu-west-1.amazonaws.com/biomass/biomass_map_gdf.geojson';
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                // Pre-calculate bounds for all tiles
+                const tilesWithBounds = data.features.map((tile, index) => {
+                    const coords = tile.geometry.coordinates[0];
+                    let minLat = Infinity, maxLat = -Infinity;
+                    let minLng = Infinity, maxLng = -Infinity;
+                    
+                    coords.forEach(coord => {
+                        const [lng, lat] = coord;
+                        if (lat < minLat) minLat = lat;
+                        if (lat > maxLat) maxLat = lat;
+                        if (lng < minLng) minLng = lng;
+                        if (lng > maxLng) maxLng = lng;
+                    });
+                    
+                    return {
+                        feature: tile,
+                        bounds: L.latLngBounds([[minLat, minLng], [maxLat, maxLng]]),
+                        index: index
+                    };
+                });
+
+                // Function to show visible tiles
+                function showVisibleTiles() {
+                    const visibleBounds = map.getBounds();
+                    const visibleTiles = tilesWithBounds.filter(item => visibleBounds.intersects(item.bounds));
+                    
+                    // Remove all existing layers
+                    map.eachLayer(function(layer) {
+                        if (layer instanceof L.GeoJSON) {
+                            map.removeLayer(layer);
+                        }
+                    });
+                    
+                    // Add visible tiles
+                    visibleTiles.forEach(item => {
+                        const tileLayer = L.geoJson(item.feature, {
+                            style: {
+                                fillColor: 'green',
+                                color: 'green',
+                                weight: 1.5,
+                                fillOpacity: 0.7,
+                                interactive: false
+                            }
+                        });
+                        tileLayer.addTo(map);
+                    });
+                }
+
+                // Initial display
+                showVisibleTiles();
+                
+                // Update on move/zoom
+                map.on('moveend', showVisibleTiles);
+                map.on('zoomend', showVisibleTiles);
+                
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
+            } catch (error) {
+                console.error('Error loading tiles:', error);
+                document.getElementById('loading').textContent = 'Error loading tiles. Check console for details.';
+            }
+        }
+
+        // Load tiles when page is ready
+        loadTiles();
+    </script>
+</body>
+</html>
+
