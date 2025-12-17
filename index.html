@@ -90,7 +90,7 @@
             try {
                 // Use S3 bucket directly (works without CORS issues)
                 // If you need to use the ERDA URL, you'll need to set up a local proxy or server
-                const url = 'https://mmearth-bench-bucket-a1e1664c.s3.eu-west-1.amazonaws.com/biomass/biomass_map_gdf.geojson';
+                const url = 'https://sid.erda.dk/share_redirect/cbMhbwV1yP/mmearth-bench-explorer/map_data/biomass/biomass_map_gdf.geojson';
                 
                 const response = await fetch(url);
                 const data = await response.json();
