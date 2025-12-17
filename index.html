@@ -95,10 +95,12 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 
-                // Pre-calculate bounds for all tiles
-                const tilesWithBounds = [];
-                const sentinel2TileCache = new Map(); // Cache of verified Sentinel-2 tiles
+                // Pre-calculate bounds for all tiles and check for Sentinel-2 availability
+                document.getElementById('loading').textContent = 'Checking Sentinel-2 availability...';
                 
+                const allTilesWithBounds = [];
+                
+                // First, calculate bounds for all tiles
                 for (let index = 0; index < data.features.length; index++) {
                     const tile = data.features[index];
                     const coords = tile.geometry.coordinates[0];
@@ -115,12 +117,39 @@
                     
                     const bounds = L.latLngBounds([[minLat, minLng], [maxLat, maxLng]]);
                     
-                    tilesWithBounds.push({
+                    allTilesWithBounds.push({
                         feature: tile,
                         bounds: bounds,
                         index: index
                     });
                 }
+                
+                // Check all tiles for Sentinel-2 availability
+                document.getElementById('loading').textContent = `Checking ${allTilesWithBounds.length} tiles for Sentinel-2...`;
+                
+                const checkPromises = allTilesWithBounds.map(async (item) => {
+                    const sentinel2Url = `https://sid.erda.dk/share_redirect/cbMhbwV1yP/mmearth-bench-explorer/map_data/biomass/png_tiles/Sentinel2/tile_${item.index}_Sentinel2.png`;
+                    
+                    try {
+                        const response = await fetch(sentinel2Url, { method: 'HEAD' });
+                        if (response.ok) {
+                            return {
+                                ...item,
+                                sentinel2Url: sentinel2Url
+                            };
+                        }
+                    } catch (e) {
+                        // Tile doesn't exist
+                    }
+                    return null;
+                });
+                
+                const results = await Promise.all(checkPromises);
+                
+                // Filter to only tiles with Sentinel-2
+                const tilesWithBounds = results.filter(item => item !== null);
+                
+                document.getElementById('loading').textContent = `Found ${tilesWithBounds.length} tiles with Sentinel-2 data`;
                 
                 // Function to show visible tiles
                 function showVisibleTiles() {
@@ -149,55 +178,36 @@
                     });
                 }
                 
-                // Function to check if Sentinel-2 tile exists
-                async function checkSentinel2Tile(index, bounds) {
-                    if (sentinel2TileCache.has(index)) {
-                        return sentinel2TileCache.get(index);
-                    }
-                    
-                    const sentinel2Url = `https://sid.erda.dk/share_redirect/cbMhbwV1yP/mmearth-bench-explorer/map_data/biomass/png_tiles/Sentinel2/tile_${index}_Sentinel2.png`;
-                    
-                    try {
-                        const response = await fetch(sentinel2Url, { method: 'HEAD' });
-                        const exists = response.ok;
-                        sentinel2TileCache.set(index, exists ? { url: sentinel2Url, bounds: bounds } : null);
-                        return exists ? { url: sentinel2Url, bounds: bounds } : null;
-                    } catch (e) {
-                        sentinel2TileCache.set(index, null);
-                        return null;
-                    }
-                }
-                
                 // Function to show visible Sentinel-2 tiles
-                async function showVisibleSentinel2Tiles() {
+                function showVisibleSentinel2Tiles() {
+                    console.log('showVisibleSentinel2Tiles called');
                     if (!map.hasLayer(sentinel2Layer)) {
+                        console.log('Sentinel-2 layer not active');
+                        sentinel2Layer.clearLayers();
                         return; // Layer is not active
                     }
                     
                     const visibleBounds = map.getBounds();
                     const visibleTiles = tilesWithBounds.filter(item => visibleBounds.intersects(item.bounds));
                     
+                    console.log(`Found ${visibleTiles.length} visible Sentinel-2 tiles`);
+                    
                     // Clear existing Sentinel-2 overlays
                     sentinel2Layer.clearLayers();
                     
-                    // Check and add visible Sentinel-2 tiles
-                    const checkPromises = visibleTiles.map(async (item) => {
-                        const sentinel2Data = await checkSentinel2Tile(item.index, item.bounds);
-                        if (sentinel2Data) {
-                            const imageOverlay = L.imageOverlay(sentinel2Data.url, sentinel2Data.bounds, {
-                                opacity: 0.8,
-                                interactive: false
-                            });
-                            imageOverlay.addTo(sentinel2Layer);
-                        }
+                    // Add visible Sentinel-2 tiles (all tiles in tilesWithBounds already have Sentinel-2)
+                    visibleTiles.forEach((item, idx) => {
+                        console.log(`Adding Sentinel-2 tile ${idx + 1}/${visibleTiles.length}:`, item.sentinel2Url);
+                        const imageOverlay = L.imageOverlay(item.sentinel2Url, item.bounds, {
+                            opacity: 0.8,
+                            interactive: false
+                        });
+                        imageOverlay.addTo(sentinel2Layer);
                     });
-                    
-                    await Promise.all(checkPromises);
                 }
 
                 // Initial display
                 showVisibleTiles();
-                showVisibleSentinel2Tiles();
                 
                 // Update on move/zoom
                 map.on('moveend', function() {
@@ -209,7 +219,21 @@
                     showVisibleSentinel2Tiles();
                 });
                 
-                // Update Sentinel-2 layer when toggled
+                // Set up Sentinel-2 layer toggle handlers
+                // Listen to layer control changes - this is the most reliable way
+                map.on('overlayadd', function(e) {
+                    if (e.layer === sentinel2Layer) {
+                        showVisibleSentinel2Tiles();
+                    }
+                });
+                
+                map.on('overlayremove', function(e) {
+                    if (e.layer === sentinel2Layer) {
+                        sentinel2Layer.clearLayers();
+                    }
+                });
+                
+                // Also listen to the layer's own events as backup
                 sentinel2Layer.on('add', function() {
                     showVisibleSentinel2Tiles();
                 });
