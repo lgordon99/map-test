@@ -47,14 +47,29 @@
             worldCopyJump: false
         }).setView([0, 0], 2);
 
-        // Add background tile layer
+        // Add background tile layers
         let Stadia_OSMBright = L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.{ext}', {
             minZoom: 1,
             maxZoom: 20,
             attribution: '&copy; <a href="https://www.stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             ext: 'png',
         });
+
+        let Esri_WorldImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            minZoom: 1,
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        });
+
+        // Add default layer
         Stadia_OSMBright.addTo(map);
+
+        // Add layer control
+        let baseMaps = {
+            "OSM Bright": Stadia_OSMBright,
+            "Esri World Imagery": Esri_WorldImagery
+        };
+        L.control.layers(baseMaps).addTo(map);
 
         // Prevent dragging past map edges
         map.on('drag', function() {
