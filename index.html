@@ -95,6 +95,11 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 
+                // Debug: Check first tile properties to find ID field
+                if (data.features.length > 0) {
+                    console.log('Sample tile properties:', data.features[0].properties);
+                }
+                
                 // Pre-calculate bounds for all tiles and check for Sentinel-2 availability
                 document.getElementById('loading').textContent = 'Checking Sentinel-2 availability...';
                 
@@ -117,10 +122,15 @@
                     
                     const bounds = L.latLngBounds([[minLat, minLng], [maxLat, maxLng]]);
                     
+                    // Get tile ID from properties - try common property names
+                    const tileId = tile.properties?.id || tile.properties?.ID || tile.properties?.tile_id || 
+                                  tile.properties?.tileId || tile.properties?.tileID || index;
+                    
                     allTilesWithBounds.push({
                         feature: tile,
                         bounds: bounds,
-                        index: index
+                        index: index,
+                        tileId: tileId
                     });
                 }
                 
@@ -128,7 +138,7 @@
                 document.getElementById('loading').textContent = `Checking ${allTilesWithBounds.length} tiles for Sentinel-2...`;
                 
                 const checkPromises = allTilesWithBounds.map(async (item) => {
-                    const sentinel2Url = `https://sid.erda.dk/share_redirect/cbMhbwV1yP/mmearth-bench-explorer/map_data/biomass/png_tiles/Sentinel2/tile_${item.index}_Sentinel2.png`;
+                    const sentinel2Url = `https://sid.erda.dk/share_redirect/cbMhbwV1yP/mmearth-bench-explorer/map_data/biomass/png_tiles/Sentinel2/tile_${item.tileId}_Sentinel2.png`;
                     
                     try {
                         const response = await fetch(sentinel2Url, { method: 'HEAD' });
